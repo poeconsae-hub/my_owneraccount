@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Banque Misr Financial Manager</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        /* Custom Print Styles for PDF Export */
+        @media print {
+            body * { visibility: hidden; }
+            #printable-area, #printable-area * { visibility: visible; }
+            #printable-area { 
+                position: absolute; 
+                left: 0; 
+                top: 0; 
+                width: 100%; 
+                margin: 0; 
+                padding: 20px;
+            }
+            .no-print { display: none !important; }
+            table { font-size: 10pt; border-collapse: collapse; }
+            th, td { border: 1px solid #ddd; padding: 8px; }
+        }
+
+        /* Smooth transitions */
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Input number spinner removal */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans min-h-screen flex flex-col">
+
+    <!-- Navbar -->
+    <nav class="bg-blue-900 text-white p-4 shadow-lg no-print">
+        <div class="container mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <i class="fa-solid fa-building-columns text-2xl"></i>
+                <h1 class="text-xl font-bold tracking-wide">Banque Misr Manager</h1>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="app.saveToLocalFile()" class="bg-green-600 hover:bg-green-700 px-3 py-2 rounded text-sm transition"><i class="fa-solid fa-floppy-disk mr-1"></i> Save Backup</button>
+                <label class="bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded text-sm transition cursor-pointer">
+                    <i class="fa-solid fa-upload mr-1"></i> Load Backup
+                    <input type="file" id="loadBackup" class="hidden" accept=".json" onchange="app.loadFromLocalFile(this)">
+                </label>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container mx-auto p-4 flex-grow fade-in" id="printable-area">
+        
+        <!-- Controls & Filters -->
+        <div class="bg-white p-4 rounded-lg shadow mb-6 no-print">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Report View</label>
+                    <select id="viewFilter" onchange="app.renderTable()" class="w-full border rounded p-2 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="all">All Transactions</option>
+                        <option value="charge">Bank Charges Only</option>
+                        <option value="salary">Salary Transfers</option>
+                        <option value="owner">Owner Directives</option>
+                        <option value="funds">Funds Transfer/Cheques</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Search</label>
+                    <input type="text" id="searchInput" placeholder="Name, memo, num..." onkeyup="app.renderTable()" class="w-full border rounded p-2 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div class="md:col-span-2 flex justify-end gap-2">
+                    <button onclick="app.openModal()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow transition"><i class="fa-solid fa-plus mr-1"></i> Add Transaction</button>
+                    <button onclick="app.exportExcel()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded shadow transition"><i class="fa-solid fa-file-excel mr-1"></i> Excel</button>
+                    <button onclick="window.print()" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded shadow transition"><i class="fa-solid fa-file-pdf mr-1"></i> PDF</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white p-4 rounded shadow border-l-4 border-blue-500">
+                <p class="text-xs text-gray-500 uppercase">Total Debit</p>
+                <p class="text-xl font-bold text-gray-800" id="sumDebit">0.00</p>
+            </div>
+            <div class="bg-white p-4 rounded shadow border-l-4 border-green-500">
+                <p class="text-xs text-gray-500 uppercase">Total Credit</p>
+                <p class="text-xl font-bold text-gray-800" id="sumCredit">0.00</p>
+            </div>
+            <div class="bg-white p-4 rounded shadow border-l-4 border-purple-500">
+                <p class="text-xs text-gray-500 uppercase">Total Security</p>
+                <p class="text-xl font-bold text-purple-700" id="sumSecurity">0.00</p>
+            </div>
+            <div class="bg-white p-4 rounded shadow border-l-4 border-orange-500">
+                <p class="text-xs text-gray-500 uppercase">Total Profit</p>
+                <p class="text-xl font-bold text-orange-700" id="sumProfit">0.00</p>
+            </div>
+        </div>
+
+        <!-- Data Table -->
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-left text-sm whitespace-nowrap">
+                    <thead class="bg-gray-800 text-white uppercase tracking-wider">
+                        <tr>
+                            <th class="px-4 py-3">Date</th>
+                            <th class="px-4 py-3">Num</th>
+                            <th class="px-4 py-3">Name / Memo</th>
+                            <th class="px-4 py-3 text-right">Debit</th>
+                            <th class="px-4 py-3 text-right">Credit</th>
+                            <th class="px-4 py-3 text-right bg-purple-900">Security Amt</th>
+                            <th class="px-4 py-3 text-right bg-orange-900">Profit Amt</th>
+                            <th class="px-4 py-3 text-right">Balance</th>
+                            <th class="px-4 py-3 text-center no-print">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-gray-200">
+                        <!-- Rows injected by JS -->
+                    </tbody>
+                    <tfoot class="bg-gray-100 font-bold border-t-2 border-gray-300">
+                        <tr>
+                            <td colspan="3" class="px-4 py-3 text-right">TOTALS:</td>
+                            <td class="px-4 py-3 text-right" id="footDebit">0.00</td>
+                            <td class="px-4 py-3 text-right" id="footCredit">0.00</td>
+                            <td class="px-4 py-3 text-right text-purple-700" id="footSecurity">0.00</td>
+                            <td class="px-4 py-3 text-right text-orange-700" id="footProfit">0.00</td>
+                            <td class="px-4 py-3 text-right" id="footBalance">0.00</td>
+                            <td class="no-print"></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Form -->
+    <div id="modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center no-print">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 p-6 fade-in">
+            <h2 class="text-xl font-bold mb-4 text-blue-900" id="modalTitle">Add Transaction</h2>
+            <form id="txForm" onsubmit="app.handleFormSubmit(event)">
+                <input type="hidden" id="editId">
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div><label class="block text-xs font-bold mb-1">Date</label><input type="date" id="fDate" required class="w-full border p-2 rounded"></div>
+                    <div><label class="block text-xs font-bold mb-1">Num / Ref</label><input type="text" id="fNum" class="w-full border p-2 rounded"></div>
+                </div>
+                <div class="mb-4"><label class="block text-xs font-bold mb-1">Name / Description</label><input type="text" id="fName" required class="w-full border p-2 rounded"></div>
+                <div class="mb-4"><label class="block text-xs font-bold mb-1">Memo / Details</label><input type="text" id="fMemo" class="w-full border p-2 rounded"></div>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div><label class="block text-xs font-bold mb-1">Debit (+)</label><input type="number" step="0.01" id="fDebit" class="w-full border p-2 rounded" onchange="app.validateDebitCredit()"></div>
+                    <div><label class="block text-xs font-bold mb-1">Credit (-)</label><input type="number" step="0.01" id="fCredit" class="w-full border p-2 rounded" onchange="app.validateDebitCredit()"></div>
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div><label class="block text-xs font-bold mb-1 text-purple-700">Security Amount</label><input type="number" step="0.01" id="fSecurity" class="w-full border p-2 rounded bg-purple-50"></div>
+                    <div><label class="block text-xs font-bold mb-1 text-orange-700">Profit Amount</label><input type="number" step="0.01" id="fProfit" class="w-full border p-2 rounded bg-orange-50"></div>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button type="button" onclick="app.closeModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded">Cancel</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save Record</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Banque Misr Financial Manager Application Logic
+         */
+        const app = {
+            data: [],
+            
+            // Initial Data extracted from Banq Misr.xlsx
+            seedData: [
+                {id: 1, date: '2026-01-31', num: '', name: 'Bank Charge', memo: 'Bank Charges for January 2026', debit: 0, credit: 63.00, security: 0, profit: 0},
+                {id: 2, date: '2026-02-28', num: '', name: 'Bank Charge', memo: 'Bank Charges for February 2026', debit: 0, credit: 63.00, security: 0, profit: 0},
+                {id: 3, date: '2026-03-31', num: '', name: 'Bank Charge', memo: 'Bank Charges for March 2026', debit: 0, credit: 63.00, security: 0, profit: 0},
+                {id: 4, date: '2026-04-07', num: '500807', name: 'Funds Transfer', memo: 'Cheque#500807', debit: 500000.00, credit: 0, security: 0, profit: 0},
+                {id: 5, date: '2026-04-26', num: '', name: 'Bank Trans', memo: '($20,000) Salary April 2026', debit: 0, credit: 73600.00, security: 0, profit: 0},
+                {id: 6, date: '2026-04-26', num: '', name: 'Bank Charge', memo: 'Bank Charges for April 2026', debit: 0, credit: 613.50, security: 0, profit: 0},
+                {id: 7, date: '2026-04-29', num: '500824', name: 'Funds Transfer', memo: 'Cheque#500824', debit: 500000.00, credit: 0, security: 0, profit: 0},
+                {id: 8, date: '2026-05-26', num: '', name: 'Bank Trans', memo: '($15,050) Salary May 2026', debit: 0, credit: 55384.00, security: 0, profit: 0},
+                {id: 9, date: '2026-05-26', num: '', name: 'Bank Charge', memo: 'Bank Charges for May 2026', debit: 0, credit: 340.50, security: 0, profit: 0},
+                {id: 10, date: '2026-06-25', num: '015097', name: 'Amr Said Teaima', memo: 'Transfer - Owners Directives', debit: 0, credit: 100000.00, security: 0, profit: 0},
+                {id: 11, date: '2026-06-26', num: '', name: 'Bank Trans', memo: '($25,175) Salary June 2026 PV3683', debit: 0, credit: 92644.00, security: 0, profit: 0},
+                {id: 12, date: '2026-06-30', num: '', name: 'Bank Charge', memo: 'Bank Charges for June 2026', debit: 0, credit: 340.50, security: 0, profit: 0},
+                {id: 13, date: '2026-07-02', num: '015098', name: 'Amr Said Teaima', memo: 'Transfer - Owners Directives', debit: 0, credit: 100000.00, security: 0, profit: 0},
+                {id: 14, date: '2026-07-06', num: '015099', name: 'Amr Said Teaima', memo: 'Transfer - Owners Directives', debit: 0, credit: 100000.00, security: 0, profit: 0},
+                {id: 15, date: '2026-07-26', num: '', name: 'Bank Trans', memo: '($25,000) Salary July 2026 PV3684', debit: 0, credit: 92000.00, security: 0, profit: 0},
+                {id: 16, date: '2026-07-31', num: '', name: 'Bank Charge', memo: 'Bank Charges for July 2026', debit: 0, credit: 340.50, security: 0, profit: 0},
+                {id: 17, date: '2026-08-03', num: '500873', name: 'Funds Transfer', memo: 'Cheque#500873', debit: 250000.00, credit: 0, security: 0, profit: 0},
+                {id: 18, date: '2026-08-03', num: '500874', name: 'Funds Transfer', memo: 'Cheque#500874', debit: 250000.00, credit: 0, security: 0, profit: 0},
+                {id: 19, date: '2026-08-03', num: '500875', name: 'Funds Transfer', memo: 'Cheque#500873', debit: 250000.00, credit: 0, security: 0, profit: 0},
+                {id: 20, date: '2026-08-03', num: '500876', name: 'Funds Transfer', memo: 'Cheque#500874', debit: 250000.00, credit: 0, security: 0, profit: 0}
+            ],
+
+            init() {
+                const stored = localStorage.getItem('bm_data');
+                this.data = stored ? JSON.parse(stored) : [...this.seedData];
+                this.renderTable();
+            },
+
+            save() {
+                localStorage.setItem('bm_data', JSON.stringify(this.data));
+                this.renderTable();
+            },
+
+            getFilteredData() {
+                const view = document.getElementById('viewFilter').value;
+                const search = document.getElementById('searchInput').value.toLowerCase();
+                
+                return this.data.filter(row => {
+                    const matchesSearch = 
+                        row.name.toLowerCase().includes(search) || 
+                        row.memo.toLowerCase().includes(search) ||
+                        row.num.toLowerCase().includes(search);
+                    
+                    let matchesView = true;
+                    if (view === 'charge') matchesView = row.name.toLowerCase().includes('bank charge');
+                    if (view === 'salary') matchesView = row.memo.toLowerCase().includes('salary');
+                    if (view === 'owner') matchesView = row.memo.toLowerCase().includes('owners directives');
+                    if (view === 'funds') matchesView = row.name.toLowerCase().includes('funds transfer');
+
+                    return matchesSearch && matchesView;
+                }).sort((a,b) => new Date(a.date) - new Date(b.date));
+            },
+
+            renderTable() {
+                const tbody = document.getElementById('tableBody');
+                const filtered = this.getFilteredData();
+                
+                let html = '';
+                let runBal = 593889.06; // Starting balance from sheet before Jan 31
+                let tDebit = 0, tCredit = 0, tSec = 0, tProf = 0;
+
+                // If filtering, we need to be careful with running balance. 
+                // For simplicity in filtered views, we show running balance of FILTERED set 
+                // OR we calculate true running balance. Let's do TRUE running balance based on full dataset order.
+                // To keep it simple and accurate: Running balance only makes sense in "ALL" view.
+                // In filtered views, we'll just sum the visible rows.
+                
+                if (document.getElementById('viewFilter').value === 'all') {
+                     // Recalculate running balance from start of full dataset
+                     // Note: The seed data starts mid-stream. We assume the starting balance applies to the first record.
+                }
+
+                filtered.forEach((row, index) => {
+                    const sec = parseFloat(row.security) || 0;
+                    const prof = parseFloat(row.profit) || 0;
+                    const deb = parseFloat(row.debit) || 0;
+                    const cred = parseFloat(row.credit) || 0;
+
+                    tDebit += deb;
+                    tCredit += cred;
+                    tSec += sec;
+                    tProf += prof;
+
+                    // Running Balance Logic (Only accurate in unfiltered chronological view)
+                    if(document.getElementById('viewFilter').value === 'all' && !document.getElementById('searchInput').value) {
+                        runBal = runBal + deb - cred;
+                    } else {
+                        runBal = null; // Don't show misleading running balance in filtered views
+                    }
+
+                    html += `
+                        <tr class="hover:bg-gray-50 transition border-b">
+                            <td class="px-4 py-3">${row.date}</td>
+                            <td class="px-4 py-3 font-mono text-xs">${row.num}</td>
+                            <td class="px-4 py-3">
+                                <div class="font-semibold">${row.name}</div>
+                                <div class="text-xs text-gray-500">${row.memo}</div>
+                            </td>
+                            <td class="px-4 py-3 text-right text-green-700">${deb ? deb.toLocaleString('en-US', {minimumFractionDigits: 2}) : '-'}</td>
+                            <td class="px-4 py-3 text-right text-red-700">${cred ? cred.toLocaleString('en-US', {minimumFractionDigits: 2}) : '-'}</td>
+                            <td class="px-4 py-3 text-right bg-purple-50 font-medium text-purple-800">${sec ? sec.toLocaleString('en-US', {minimumFractionDigits: 2}) : '<span class="text-gray-300">0.00</span>'}</td>
+                            <td class="px-4 py-3 text-right bg-orange-50 font-medium text-orange-800">${prof ? prof.toLocaleString('en-US', {minimumFractionDigits: 2}) : '<span class="text-gray-300">0.00</span>'}</td>
+                            <td class="px-4 py-3 text-right font-bold">${runBal !== null ? runBal.toLocaleString('en-US', {minimumFractionDigits: 2}) : '-'}</td>
+                            <td class="px-4 py-3 text-center no-print">
+                                <button onclick="app.edit(${row.id})" class="text-blue-600 hover:text-blue-800 mx-1" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
+                                <button onclick="app.remove(${row.id})" class="text-red-600 hover:text-red-800 mx-1" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                tbody.innerHTML = html || '<tr><td colspan="9" class="text-center py-8 text-gray-400">No records found</td></tr>';
+
+                // Update Summaries
+                const fmt = n => n.toLocaleString('en-US', {minimumFractionDigits: 2});
+                document.getElementById('sumDebit').innerText = fmt(tDebit);
+                document.getElementById('sumCredit').innerText = fmt(tCredit);
+                document.getElementById('sumSecurity').innerText = fmt(tSec);
+                document.getElementById('sumProfit').innerText = fmt(tProf);
+                
+                document.getElementById('footDebit').innerText = fmt(tDebit);
+                document.getElementById('footCredit').innerText = fmt(tCredit);
+                document.getElementById('footSecurity').innerText = fmt(tSec);
+                document.getElementById('footProfit').innerText = fmt(tProf);
+                document.getElementById('footBalance').innerText = runBal !== null ? fmt(runBal) : '-';
+            },
+
+            // --- CRUD Operations ---
+            openModal(isEdit = false) {
+                document.getElementById('modal').classList.remove('hidden');
+                document.getElementById('modalTitle').innerText = isEdit ? 'Edit Transaction' : 'Add New Transaction';
+                if (!isEdit) {
+                    document.getElementById('txForm').reset();
+                    document.getElementById('editId').value = '';
+                    document.getElementById('fDate').valueAsDate = new Date();
+                }
+            },
+
+            closeModal() {
+                document.getElementById('modal').classList.add('hidden');
+            },
+
+            handleFormSubmit(e) {
+                e.preventDefault();
+                const id = document.getElementById('editId').value;
+                const record = {
+                    id: id ? parseInt(id) : Date.now(),
+                    date: document.getElementById('fDate').value,
+                    num: document.getElementById('fNum').value,
+                    name: document.getElementById('fName').value,
+                    memo: document.getElementById('fMemo').value,
+                    debit: parseFloat(document.getElementById('fDebit').value) || 0,
+                    credit: parseFloat(document.getElementById('fCredit').value) || 0,
+                    security: parseFloat(document.getElementById('fSecurity').value) || 0,
+                    profit: parseFloat(document.getElementById('fProfit').value) || 0
+                };
+
+                if (id) {
+                    const idx = this.data.findIndex(x => x.id == id);
+                    if (idx > -1) this.data[idx] = record;
+                } else {
+                    this.data.push(record);
+                }
+
+                this.save();
+                this.closeModal();
+            },
+
+            edit(id) {
+                const row = this.data.find(x => x.id === id);
+                if (!row) return;
+                
+                document.getElementById('editId').value = row.id;
+                document.getElementById('fDate').value = row.date;
+                document.getElementById('fNum').value = row.num;
+                document.getElementById('fName').value = row.name;
+                document.getElementById('fMemo').value = row.memo;
+                document.getElementById('fDebit').value = row.debit || '';
+                document.getElementById('fCredit').value = row.credit || '';
+                document.getElementById('fSecurity').value = row.security || '';
+                document.getElementById('fProfit').value = row.profit || '';
+                
+                this.openModal(true);
+            },
+
+            remove(id) {
+                if(confirm('Are you sure you want to delete this transaction?')) {
+                    this.data = this.data.filter(x => x.id !== id);
+                    this.save();
+                }
+            },
+
+            validateDebitCredit() {
+                // Optional: Prevent entering both debit and credit simultaneously
+                const d = document.getElementById('fDebit');
+                const c = document.getElementById('fCredit');
+                if(d.value && c.value) {
+                    // Simple UX hint, not blocking
+                    console.warn("Usually only Debit OR Credit should have a value");
+                }
+            },
+
+            // --- Export & Backup ---
+            exportExcel() {
+                const filtered = this.getFilteredData();
+                let csv = 'Date,Num,Name,Memo,Debit,Credit,Security Amount,Profit Amount\n';
+                
+                filtered.forEach(r => {
+                    csv += `"${r.date}","${r.num}","${r.name.replace(/"/g,'""')}","${r.memo.replace(/"/g,'""')}",${r.debit},${r.credit},${r.security||0},${r.profit||0}\n`;
+                });
+
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `Banque_Misr_Report_${new Date().toISOString().slice(0,10)}.csv`;
+                link.click();
+            },
+
+            saveToLocalFile() {
+                const json = JSON.stringify(this.data, null, 2);
+                const blob = new Blob([json], {type: 'application/json'});
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `BM_Backup_${new Date().toISOString().slice(0,10)}.json`;
+                link.click();
+            },
+
+            loadFromLocalFile(input) {
+                const file = input.files[0];
+                if(!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const loaded = JSON.parse(e.target.result);
+                        if(Array.isArray(loaded)) {
+                            this.data = loaded;
+                            this.save();
+                            alert('Backup loaded successfully!');
+                        } else {
+                            alert('Invalid backup file format.');
+                        }
+                    } catch(err) {
+                        alert('Error reading file: ' + err.message);
+                    }
+                };
+                reader.readAsText(file);
+                input.value = ''; // Reset so same file can be selected again
+            }
+        };
+
+        // Initialize App
+        document.addEventListener('DOMContentLoaded', () => app.init());
+    </script>
+</body>
+</html>
